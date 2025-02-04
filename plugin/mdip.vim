@@ -88,6 +88,33 @@ function! s:SaveFileTMPLinux(imgdir, tmpname) abort
     return tmpfile
 endfunction
 
+function! s:SaveFileTMPSecondaryLinux(imgdir, tmpname) abort
+    if $DISPLAY != '' && executable('xclip')
+        let system_targets = 'xclip -selection secondary -t TARGETS -o'
+        let system_clip = 'xclip -selection secondary -t %s -o > %s'
+    else
+        echoerr 'Needs xclip in X11.'
+        return 1
+    endif
+
+    let targets = filter(systemlist(system_targets), 'v:val =~# ''image/''')
+    if empty(targets) | return 1 | endif
+
+    if index(targets, "image/png") >= 0
+        " Use PNG if available
+        let mimetype = "image/png"
+        let extension = "png"
+    else
+        " Fallback
+        let mimetype = targets[0]
+        let extension = split(mimetype, '/')[-1]
+    endif
+
+    let tmpfile = a:imgdir . '/' . a:tmpname . '.' . extension
+    call system(printf(system_clip, mimetype, tmpfile))
+    return tmpfile
+endfunction
+
 function! s:SaveFileTMPWin32(imgdir, tmpname) abort
     let tmpfile = a:imgdir . '\' . a:tmpname . '.png'
     let tmpfile = substitute(tmpfile, '\\ ', ' ', 'g')
@@ -134,6 +161,10 @@ function! s:SaveFileTMP(imgdir, tmpname)
     elseif s:os == "Windows"
         return s:SaveFileTMPWin32(a:imgdir, a:tmpname)
     endif
+endfunction
+
+function! s:SaveFileTMPSecondary(imgdir, tmpname)
+    return s:SaveFileTMPSecondaryLinux(a:imgdir, a:tmpname)
 endfunction
 
 function! s:SaveNewFile(imgdir, tmpfile)
@@ -223,6 +254,39 @@ function! mdip#MarkdownClipboardImage()
     endwhile
 
     let tmpfile = s:SaveFileTMP(workdir, g:mdip_tmpname)
+    if tmpfile == 1
+        return
+    else
+        " let relpath = s:SaveNewFile(g:mdip_imgdir, tmpfile)
+        let extension = split(tmpfile, '\.')[-1]
+        let relpath = g:mdip_imgdir_intext . '/' . g:mdip_tmpname . '.' . extension
+        if call(get(g:, 'PasteImageFunction'), [relpath])
+            return
+        endif
+    endif
+endfunction
+
+function! mdip#MarkdownSecondaryClipboardImage()
+    " detect os: https://vi.stackexchange.com/questions/2572/detect-os-in-vimscript
+    let s:os = "Windows"
+    if !(has("win64") || has("win32") || has("win16"))
+        let s:os = substitute(system('uname'), '\n', '', '')
+    endif
+
+    " add check whether file with the name exists
+    while  1
+        let workdir = s:SafeMakeDir()
+        " change temp-file-name and image-name
+        let g:mdip_tmpname = g:mdip_imgname . '_' . s:RandomName()
+        let testpath =  workdir . '/' . g:mdip_tmpname . '.png'
+        if filereadable(testpath) == 0
+            break
+        else
+            echo "\nThis file name already exists"
+        endif
+    endwhile
+
+    let tmpfile = s:SaveFileTMPSecondary(workdir, g:mdip_tmpname)
     if tmpfile == 1
         return
     else
